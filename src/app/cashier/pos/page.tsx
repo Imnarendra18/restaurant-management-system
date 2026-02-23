@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,8 @@ import {
   UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
+import { useMutation } from "convex/react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Table {
@@ -61,6 +64,14 @@ export default function POSPage() {
   const tableSummary = useQuery(api.tables.getSummary);
   const activeOrders = useQuery(api.orders.getActive);
   const staff = useQuery(api.staff.getActive);
+  const { data: authSession } = authClient.useSession();
+  const activeCashierSession = authSession?.user?.id
+    ? useQuery(api.cashierSessions.getActive, { cashierId: authSession.user.id })
+    : null;
+
+  const openSessionMutation = useMutation(api.cashierSessions.open);
+  const [showOpenSessionDialog, setShowOpenSessionDialog] = useState(false);
+  const [openingCash, setOpeningCash] = useState(0);
 
   // Running tables - tables with active orders
   const runningTables = useMemo(() => {
@@ -198,6 +209,20 @@ export default function POSPage() {
 
         {/* Right Column - Summary & Actions */}
         <div className="w-80 flex flex-col gap-6">
+          {/* Open Session Button */}
+          <div>
+            {activeCashierSession ? (
+              <div className="text-sm text-muted-foreground">Session Open</div>
+            ) : (
+              <Button
+                variant="outline"
+                className="w-full justify-center gap-3 h-10"
+                onClick={() => setShowOpenSessionDialog(true)}
+              >
+                Open Cashier Session
+              </Button>
+            )}
+          </div>
           {/* Today's Summary */}
           <section className="bg-card border border-border rounded-2xl p-5">
             <h2 className="text-lg font-semibold text-foreground mb-4">Today&apos;s Summary</h2>
@@ -237,6 +262,45 @@ export default function POSPage() {
               </div>
             </div>
           </section>
+
+          {/* Open Session Dialog */}
+          <Dialog open={showOpenSessionDialog} onOpenChange={setShowOpenSessionDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Open Cashier Session</DialogTitle>
+                <DialogDescription>Enter opening cash to start a cashier session.</DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <Label>Opening Cash</Label>
+                <Input
+                  type="number"
+                  value={openingCash}
+                  onChange={(e) => setOpeningCash(Number(e.target.value))}
+                  className="mt-2"
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowOpenSessionDialog(false)}>Cancel</Button>
+                <Button
+                  onClick={async () => {
+                    if (!authSession || !authSession.user) {
+                      toast.error("Not signed in");
+                      return;
+                    }
+                    try {
+                      await openSessionMutation({ cashierId: authSession.user.id, openingCash: openingCash || 0 });
+                      toast.success("Session opened");
+                      setShowOpenSessionDialog(false);
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Failed to open session");
+                    }
+                  }}
+                >
+                  Open
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Table Swap & Waiter Assignment */}
           <section className="bg-card border border-border rounded-2xl p-5">

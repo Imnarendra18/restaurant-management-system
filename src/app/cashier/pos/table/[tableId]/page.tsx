@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
 
 interface OrderItem {
   _id?: Id<"orderItems">;
@@ -76,6 +77,12 @@ function TableOrderContent({ tableId }: { tableId: string }) {
   const table = !isSpecialOrder ? useQuery(api.tables.getById, { id: tableId as Id<"tables"> }) : null;
   const existingOrder = !isSpecialOrder && isExistingOrder 
     ? useQuery(api.orders.getActiveOrderWithItems, { tableId: tableId as Id<"tables"> }) 
+    : null;
+
+  // Auth + cashier session
+  const { data: authSession } = authClient.useSession();
+  const activeCashierSession = authSession?.user?.id
+    ? useQuery(api.cashierSessions.getActive, { cashierId: authSession.user.id })
     : null;
 
   // Mutations
@@ -171,14 +178,20 @@ function TableOrderContent({ tableId }: { tableId: string }) {
       return;
     }
 
+    // Require an open cashier session
+    if (!authSession || !authSession.user || !activeCashierSession) {
+      toast.error("No open cashier session. Please open a session before creating orders.");
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Create the order - this will mark the table as occupied
       const orderId = await createOrder({
         orderType: isSpecialOrder ? (tableId === "takeaway" ? "takeaway" : "delivery") : "dine_in",
         tableId: isSpecialOrder ? undefined : tableId as Id<"tables">,
-        cashierId: "temp-cashier", // TODO: Get from auth
-        sessionId: "temp-session" as Id<"cashierSessions">, // TODO: Get active session
+        cashierId: authSession.user.id,
+        sessionId: activeCashierSession._id as Id<"cashierSessions">,
         customerName: customerDetails.name || undefined,
         customerPhone: customerDetails.phone || undefined,
         customerAddress: customerDetails.address || undefined,
